@@ -16,13 +16,12 @@ def form_login() -> rx.Component:
                         rx.tabs.trigger("Akses Owner", value="tab_owner"),
                     ),
                     rx.tabs.content(
-                        # FORM AKSES MITRA
                         rx.form.root(
                             rx.vstack(
                                 rx.text("Masukkan 4 Digit Terakhir No. HP Anda:", font_size="14px", margin_top="10px"),
                                 rx.input(
                                     placeholder="Masukkan 4 angka...", 
-                                    type="text",                       
+                                    type="text",
                                     max_length=4,
                                     name="input_pin", 
                                     width="100%"
@@ -35,7 +34,6 @@ def form_login() -> rx.Component:
                         value="tab_mitra",
                     ),
                     rx.tabs.content(
-                        # FORM AKSES OWNER
                         rx.form.root(
                             rx.vstack(
                                 rx.input(placeholder="Username", name="input_user", width="100%", margin_top="10px"),
@@ -65,11 +63,9 @@ def form_login() -> rx.Component:
     )
 
 def halaman_owner() -> rx.Component:
-    """Tampilan khusus untuk Owner setelah login dengan penampil nama file"""
+    """Tampilan khusus untuk Owner setelah login"""
     return rx.vstack(
         rx.text("Selamat datang Owner! Silakan kelola berkas transaksi di bawah.", font_size="16px"),
-        
-        # Kotak Tempat Upload
         rx.upload(
             rx.vstack(
                 rx.button("Pilih File Excel", color_scheme="blue"),
@@ -81,10 +77,6 @@ def halaman_owner() -> rx.Component:
             border_radius="10px",
             width="100%",
         ),
-        
-        # ==============================================================================
-        # FITUR BARU: Menampilkan nama file yang sedang dipilih sebelum diimpor
-        # ==============================================================================
         rx.vstack(
             rx.foreach(
                 rx.selected_files("upload_excel"),
@@ -93,8 +85,6 @@ def halaman_owner() -> rx.Component:
             align_items="start",
             width="100%"
         ),
-        # ==============================================================================
-        
         rx.button(
             "Mulai Proses Impor Data",
             color_scheme="green",
@@ -110,10 +100,47 @@ def halaman_owner() -> rx.Component:
     )
 
 def halaman_mitra() -> rx.Component:
-    """Tampilan khusus untuk Mitra setelah login"""
+    """Tampilan Grafik Batang Utama Distribusi Omset Cabang"""
     return rx.vstack(
-        rx.text("Selamat Datang Mitra Laundry IN. Halaman grafik kinerja Anda sedang dalam perakitan.", font_size="16px"),
-        width="100%"
+        rx.hstack(
+            rx.text("Grafik Perbandingan Capaian Omset per Cabang/Outlet:", font_size="16px", font_weight="medium"),
+            rx.spacer(),
+            # TOMBOL PENYELAMAT: Untuk memicu grafik jika on_load browser macet
+            rx.button(
+                "Tampilkan Grafik", 
+                color_scheme="blue", 
+                size="2",
+                on_click=DashboardState.muat_data_grafik
+            ),
+            width="100%",
+            align_items="center"
+        ),
+        
+        # PENYUSUNAN GRAFIK RECHARTS UTAMA PROYEK
+        rx.center(
+            rx.recharts.bar_chart(
+                rx.recharts.bar(
+                    data_key="Omset", 
+                    stroke="#3b82f6", 
+                    fill="#3b82f6",
+                    radius=[4, 4, 0, 0]
+                ),
+                rx.recharts.x_axis(data_key="name", font_size="12px"),
+                rx.recharts.y_axis(font_size="12px"),
+                rx.recharts.cartesian_grid(stroke_dasharray="3 3", vertical=False),
+                rx.recharts.graphing_tooltip(),
+                data=DashboardState.data_grafik,
+                width="100%",
+                height=350,
+            ),
+            width="100%",
+            background_color="rgba(255,255,255,0.03)",
+            padding="20px",
+            border_radius="12px",
+            border="1px solid rgba(255,255,255,0.1)"
+        ),
+        width="100%",
+        spacing="4"
     )
 
 def konten_dashboard() -> rx.Component:
@@ -142,9 +169,14 @@ def konten_dashboard() -> rx.Component:
     )
 
 def halaman_dashboard() -> rx.Component:
-    """Halaman Utama"""
+    """Halaman Utama dengan Trigger muat data grafik di awal load"""
     return rx.cond(
         AuthState.is_authenticated,
         konten_dashboard(),
         form_login()
     )
+
+# Memicu pemuatan data grafik otomatis saat user berhasil masuk dashboard
+halaman_dashboard = rx.page(
+    on_load=DashboardState.muat_data_grafik
+)(halaman_dashboard)
