@@ -8,6 +8,32 @@ class DashboardState(rx.State):
     data_grafik: list[dict] = []
     outlet_aktif_lokal: str = ""
     daftar_outlet_warna: list[dict] = []
+    total_omset_tampil: str = "Rp 0"
+    rata_rata_omset_tampil: str = "Rp 0"
+
+    # Menyimpan daftar nama outlet yang sedang dicentang oleh Owner
+    outlet_terpilih: list[str] = []
+    
+    # Menampung list dictionary statistik individual untuk tabel bawah (Contoh: [{"nama": "Outlet 1", "total": "Rp 5M", "rata": "Rp 10jt"}])
+    statistik_per_outlet: list[dict] = []
+
+    def toggle_outlet(self, nama_outlet: str):
+        """Fungsi ketika checklist outlet diklik oleh Owner"""
+        # 1. Salin list aktif ke dalam variabel lokal murni Python
+        list_sekarang = list(self.outlet_terpilih)
+        
+        # 2. Balik Logika: Jika nama outlet sudah ada di list, artinya user ingin MENCOPOT centang (mematikan)
+        if nama_outlet in list_sekarang:
+            list_sekarang.remove(nama_outlet)
+        else:
+            # Jika belum ada di list, artinya user memberikan centang baru (menyalakan)
+            list_sekarang.append(nama_outlet)
+            
+        # 3. Kembalikan data list yang baru ke state Reflex
+        self.outlet_terpilih = list_sekarang
+        
+        # 4. Paksa grafik dan angka di card untuk berhitung ulang otomatis
+        return DashboardState.muat_data_grafik
     
     # ==============================================================================
     # GANTI MULAI DARI BARIS INI (Hapus versi dictionary yang tadi, ganti dengan ini)
@@ -52,15 +78,23 @@ class DashboardState(rx.State):
         """Mesin Utama: Memproses 5 Jenis Grafik secara Dinamis & Otomatis (Anti-Crash & Aman)"""
         self.data_grafik = []
         self.daftar_outlet_warna = []
+        # 📌 JURUS KUNCI: Urutkan deretan Checkbox agar rapi dari Outlet 1 sampai 6!
+        self.daftar_outlet_warna.sort(key=lambda x: x["nama"])
         outlet_target = self.outlet_aktif_lokal
         
         with rx.session() as session:
-            # 1. Ambil Data Master Outlet & Transaksi
-            daftar_outlet = session.exec(Outlet.select()).all()
+            # 1. Ambil Data Master Outlet & Urutkan secara Ascending (A-Z / ID 1-6)
+            daftar_outlet = session.exec(Outlet.select().order_by(Outlet.id)).all()
             semua_transaksi = session.exec(TransaksiLaundry.select()).all()
             
             if not semua_transaksi:
                 return
+
+            # 📌 SELIPKAN KODE INI DI SINI:
+            # Jika aplikasi baru pertama kali dibuka (list checkbox backend masih kosong),
+            # isi langsung dengan semua nama outlet agar sinkron dengan centang UI murni.
+            if not self.outlet_terpilih:
+                self.outlet_terpilih = [o.nama_outlet for o in daftar_outlet]
 
             # Pasang skema warna kontras untuk garis outlet
             warna_preset = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f43f5e"]
@@ -217,8 +251,54 @@ class DashboardState(rx.State):
                     data_baris = {"Tanggal": str(thn)}
                     self._susun_baris_peran(data_baris, peta_omset_tahun[thn], daftar_outlet, outlet_target)
 
+            # ==============================================================================
+            # KALKULASI GRAND TOTAL & DETAIL STATISTIK INDIVIDUAL PER OUTLET (TABEL BAWAH)
+            # ==============================================================================
+            grand_total_nilai = 0
+            jumlah_titik = len(self.data_grafik)
+            
+            # Wadah penampung kalkulasi angka dasar awal per outlet
+            kalkulasi_toko = {o.nama_outlet: {"total": 0, "titik_aktif": 0} for o in daftar_outlet}
+            
+            for baris in self.data_grafik:
+                if outlet_target:
+                    grand_total_nilai += baris.get("Omset", 0)
+                else:
+                    grand_total_nilai += baris.get("Total_Gabungan", 0)
+                    # Hitung akumulasi per toko untuk ditaruh di jabaran tabel bawah
+                    for o in daftar_outlet:
+                        nilai_toko = baris.get(o.nama_outlet)
+                        if nilai_toko is not None:
+                            kalkulasi_toko[o.nama_outlet]["total"] += nilai_toko
+                            kalkulasi_toko[o.nama_outlet]["titik_aktif"] += 1
+            
+            # Format Teks Grand Total & Grand Rata-rata Gabungan
+            rata_grand_nilai = grand_total_nilai / jumlah_titik if jumlah_titik > 0 else 0
+            self.total_omset_tampil = f"Rp {grand_total_nilai:,.0f}".replace(",", ".")
+            self.rata_rata_omset_tampil = f"Rp {rata_grand_nilai:,.0f}".replace(",", ".")
+            
+            # Susun data jabaran awal per outlet khusus untuk outlet yang dicentang saja
+            self.statistik_per_outlet = []
+            for o in daftar_outlet:
+                if o.nama_outlet in self.outlet_terpilih:
+                    t_nilai = kalkulasi_toko[o.nama_outlet]["total"]
+                    t_titik = kalkulasi_toko[o.nama_outlet]["titik_aktif"]
+                    r_nilai = t_nilai / t_titik if t_titik > 0 else 0
+                    
+                    self.statistik_per_outlet.append({
+                        "nama": o.nama_outlet,
+                        "total": f"Rp {t_nilai:,.0f}".replace(",", "."),
+                        "rata": f"Rp {r_nilai:,.0f}".replace(",", ".")
+                    })
+
+            # 1. Mengurutkan Tabel Bagian Bawah (Sudah Berhasil)
+            self.statistik_per_outlet.sort(key=lambda x: x["nama"])
+            
+            # 📌 TAMBAHKAN BARIS BARU INI DI SINI UNTUK MENGURUTKAN CHECKBOX ATAS:
+            self.daftar_outlet_warna.sort(key=lambda x: x["nama"])
+
     def _susun_baris_peran(self, data_baris, peta_id_omset, daftar_outlet, outlet_target):
-        """Fungsi pembantu internal untuk mengunci data sesuai hak akses Mitra / Owner"""
+        """Fungsi pembantu internal untuk mengunci data sesuai hak akses Mitra / Checklist Owner"""
         if outlet_target:
             for o in daftar_outlet:
                 if outlet_target.lower() in o.nama_outlet.lower():
@@ -228,8 +308,23 @@ class DashboardState(rx.State):
             if "Omset" in data_baris:
                 self.data_grafik.append(data_baris)
         else:
+            # ==============================================================================
+            # JALUR OWNER: SINKRONISASI TOTAL DAN GARIS DENGAN LIST CHECKBOX UTAMA
+            # ==============================================================================
+            total_per_baris = 0
             for o in daftar_outlet:
-                data_baris[o.nama_outlet] = peta_id_omset[o.id]
+                omset_toko = peta_id_omset[o.id]
+                
+                # JURUS JITU: Hanya masukkan omset jika nama outlet ada di daftar yang DICENTANG
+                if o.nama_outlet in self.outlet_terpilih:
+                    data_baris[o.nama_outlet] = omset_toko
+                    total_per_baris += omset_toko
+                else:
+                    # Jika TIDAK dicentang, beri nilai None agar garisnya lenyap dari grafik komparasi
+                    data_baris[o.nama_outlet] = None
+            
+            # Garis hijau tebal (Total Gabungan) di grafik atas hanya akan berisi penjumlahan outlet terpilih
+            data_baris["Total_Gabungan"] = total_per_baris
             self.data_grafik.append(data_baris)
 
     async def handle_upload(self, files: list[rx.UploadFile]):
