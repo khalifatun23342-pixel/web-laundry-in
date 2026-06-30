@@ -63,7 +63,7 @@ def form_login() -> rx.Component:
     )
 
 def halaman_owner() -> rx.Component:
-    """Tampilan khusus untuk Owner setelah login"""
+    """Tampilan khusus untuk Owner dengan Impor Data dan Grafik Komparasi"""
     return rx.vstack(
         rx.text("Selamat datang Owner! Silakan kelola berkas transaksi di bawah.", font_size="16px"),
         rx.upload(
@@ -95,52 +95,338 @@ def halaman_owner() -> rx.Component:
             DashboardState.pesan_status != "",
             rx.callout(DashboardState.pesan_status, color_scheme="blue", width="100%")
         ),
+        rx.divider(margin_top="20px", margin_bottom="20px"),
+        # Tampilkan grafik komparasi tumpuk multi-outlet di halaman dashboard Owner
+        grafik_owner_tumpuk(),
         width="100%",
         spacing="4"
     )
 
 def halaman_mitra() -> rx.Component:
-    """Tampilan Grafik Batang Utama Distribusi Omset Cabang"""
+    """Tampilan Grafik Garis Tunggal Urut Tanggal - Terkunci khusus Mitra"""
+    from ..controller.auth_state import AuthState
+    
     return rx.vstack(
         rx.hstack(
-            rx.text("Grafik Perbandingan Capaian Omset per Cabang/Outlet:", font_size="16px", font_weight="medium"),
-            rx.spacer(),
-            # TOMBOL PENYELAMAT: Untuk memicu grafik jika on_load browser macet
-            rx.button(
-                "Tampilkan Grafik", 
-                color_scheme="blue", 
-                size="2",
-                on_click=DashboardState.muat_data_grafik
+            rx.vstack(
+                rx.text("Tren Capaian Omset Harian (Urutan Tanggal Penuh)", font_size="18px", font_weight="bold"),
+                rx.text("Outlet Mitra: " + AuthState.nama_outlet_aktif, color="gray", font_size="14px"),
             ),
+            rx.spacer(),
+            rx.button("Tampilkan Grafik", color_scheme="blue", size="2", on_click=DashboardState.muat_data_grafik),
             width="100%",
             align_items="center"
         ),
-        
-        # PENYUSUNAN GRAFIK RECHARTS UTAMA PROYEK
         rx.center(
-            rx.recharts.bar_chart(
-                rx.recharts.bar(
-                    data_key="Omset", 
-                    stroke="#3b82f6", 
-                    fill="#3b82f6",
-                    radius=[4, 4, 0, 0]
-                ),
-                rx.recharts.x_axis(data_key="name", font_size="12px"),
-                rx.recharts.y_axis(font_size="12px"),
+            rx.recharts.line_chart(
+                rx.recharts.line(data_key="Omset", stroke="#10b981", stroke_width=3, dot={"r": 3}, active_dot={"r": 6}),
+                rx.recharts.x_axis(data_key="Tanggal", font_size="11px", tick_margin=10),
+                rx.recharts.y_axis(font_size="12px", orientation="right", tick_margin=10),
                 rx.recharts.cartesian_grid(stroke_dasharray="3 3", vertical=False),
                 rx.recharts.graphing_tooltip(),
                 data=DashboardState.data_grafik,
                 width="100%",
-                height=350,
+                height=380,
             ),
             width="100%",
-            background_color="rgba(255,255,255,0.03)",
-            padding="20px",
+            background_color="rgba(255,255,255,0.02)",
+            padding="25px 15px 15px 15px",
             border_radius="12px",
-            border="1px solid rgba(255,255,255,0.1)"
+            border="1px solid rgba(255,255,255,0.08)",
+            margin_top="15px"
         ),
         width="100%",
         spacing="4"
+    )
+
+def grafik_owner_tumpuk() -> rx.Component:
+    """Tampilan Grafik Multi-Garis Dinamis dengan 3 Dropdown Filter Interaktif Cerdas"""
+    return rx.vstack(
+        # --- PANEL FILTER DROPDOWN BARU (Ditempatkan di Atas Grafik) ---
+        rx.flex(
+            # Dropdown 1: Pilih Mode Grafik
+            rx.vstack(
+                rx.text("Mode Analisis", font_size="12px", color="gray", font_weight="bold"),
+                rx.select(
+                    DashboardState.opsi_mode,
+                    value=DashboardState.mode_grafik,
+                    on_change=lambda val: DashboardState.ganti_filter("mode", val),
+                    color_scheme="blue",
+                    width="110px",
+                ),
+                align_items="start",
+            ),
+            
+            # Dropdown 2: Pilih Bulan (Hanya Muncul jika Mode H-M, H-B, atau M-B)
+            rx.cond(
+                (DashboardState.mode_grafik == "H-M") | 
+                (DashboardState.mode_grafik == "H-B") | 
+                (DashboardState.mode_grafik == "M-B"),
+                rx.vstack(
+                    rx.text("Bulan", font_size="12px", color="gray", font_weight="bold"),
+                    rx.select(
+                        DashboardState.opsi_bulan,
+                        value=DashboardState.bulan_terpilih,
+                        on_change=lambda val: DashboardState.ganti_filter("bulan", val),
+                        width="140px",
+                    ),
+                    align_items="start",
+                ),
+            ),
+            
+            # Dropdown 3: Pilih Minggu (HANYA Muncul jika Mode murni H-M)
+            rx.cond(
+                DashboardState.mode_grafik == "H-M",
+                rx.vstack(
+                    rx.text("Pilih Minggu", font_size="12px", color="gray", font_weight="bold"),
+                    rx.select(
+                        DashboardState.opsi_minggu,
+                        value=DashboardState.minggu_terpilih,
+                        on_change=lambda val: DashboardState.ganti_filter("minggu", val),
+                        width="190px",
+                    ),
+                    align_items="start",
+                ),
+            ),
+            
+            # Dropdown 4: Pilih Tahun Aktif (Muncul untuk H-M, H-B, M-B, dan B-T)
+            rx.cond(
+                DashboardState.mode_grafik != "T-T",
+                rx.vstack(
+                    rx.text("Tahun", font_size="12px", color="gray", font_weight="bold"),
+                    rx.select(
+                        DashboardState.opsi_tahun,
+                        value=DashboardState.tahun_terpilih,
+                        on_change=lambda val: DashboardState.ganti_filter("tahun", val),
+                        width="100px",
+                    ),
+                    align_items="start",
+                ),
+            ),
+            
+            # Dropdown 5 & 6: Rentang Tahun Khusus (HANYA Muncul jika Mode T-T aktif)
+            rx.cond(
+                DashboardState.mode_grafik == "T-T",
+                rx.hstack(
+                    rx.vstack(
+                        rx.text("Tahun Awal", font_size="12px", color="gray", font_weight="bold"),
+                        rx.select(
+                            DashboardState.opsi_tahun,
+                            value=DashboardState.tt_tahun_awal,
+                            on_change=lambda val: DashboardState.ganti_filter("tt_awal", val),
+                            width="110px",
+                        ),
+                        align_items="start",
+                    ),
+                    rx.text("s/d", margin_top="25px", color="gray"),
+                    rx.vstack(
+                        rx.text("Tahun Akhir", font_size="12px", color="gray", font_weight="bold"),
+                        rx.select(
+                            DashboardState.opsi_tahun,
+                            value=DashboardState.tt_tahun_akhir,
+                            on_change=lambda val: DashboardState.ganti_filter("tt_akhir", val),
+                            width="110px",
+                        ),
+                        align_items="start",
+                    ),
+                    spacing="3",
+                ),
+            ),
+            
+            rx.spacer(),
+            
+            # Tombol Picu Muat Data Manual (Sebagai backup)
+            rx.button(
+                "Picu Muat Grafik", 
+                color_scheme="green", 
+                size="2", 
+                margin_top="18px",
+                on_click=DashboardState.muat_data_grafik
+            ),
+            width="100%",
+            spacing="4",
+            background_color="rgba(255,255,255,0.02)",
+            padding="15px",
+            border_radius="10px",
+            border="1px solid rgba(255,255,255,0.05)",
+            align_items="center",
+            flex_wrap="wrap",
+        ),
+        
+        # --- PANEL UTAMA VISUALISASI GRAFIK RECHARTS ---
+        rx.center(
+            rx.recharts.line_chart(
+                rx.foreach(
+                    DashboardState.daftar_outlet_warna,
+                    lambda item: rx.recharts.line(
+                        data_key=item["nama"],
+                        stroke=item["warna"],
+                        stroke_width=2.5,
+                        dot={"r": 2},
+                        active_dot={"r": 5}
+                    )
+                ),
+                rx.recharts.x_axis(data_key="Tanggal", font_size="11px", tick_margin=10),
+                rx.recharts.y_axis(font_size="12px", orientation="right", tick_margin=10),
+                rx.recharts.cartesian_grid(stroke_dasharray="3 3", vertical=False),
+                rx.recharts.graphing_tooltip(),
+                rx.recharts.legend(vertical_align="bottom", height=45, margin_top=15),
+                data=DashboardState.data_grafik,
+                width="100%",
+                height=420,
+            ),
+            width="100%",
+            background_color="rgba(255,255,255,0.02)",
+            padding="25px 15px 15px 15px",
+            border_radius="12px",
+            border="1px solid rgba(255,255,255,0.08)",
+            margin_top="10px"
+        ),
+        width="100%",
+        spacing="3"
+    )
+
+def grafik_mitra_tunggal() -> rx.Component:
+    """Tampilan Grafik Tunggal Mitra dengan 3 Dropdown Filter Interaktif (Hanya Data Outlet Sendiri)"""
+    return rx.vstack(
+        # --- PANEL FILTER DROPDOWN MITRA ---
+        rx.flex(
+            # Dropdown 1: Pilih Mode Grafik
+            rx.vstack(
+                rx.text("Mode Analisis", font_size="12px", color="gray", font_weight="bold"),
+                rx.select(
+                    DashboardState.opsi_mode,
+                    value=DashboardState.mode_grafik,
+                    on_change=lambda val: DashboardState.ganti_filter("mode", val),
+                    color_scheme="blue",
+                    width="110px",
+                ),
+                align_items="start",
+            ),
+            
+            # Dropdown 2: Pilih Bulan (Muncul jika Mode H-M, H-B, atau M-B)
+            rx.cond(
+                (DashboardState.mode_grafik == "H-M") | 
+                (DashboardState.mode_grafik == "H-B") | 
+                (DashboardState.mode_grafik == "M-B"),
+                rx.vstack(
+                    rx.text("Bulan", font_size="12px", color="gray", font_weight="bold"),
+                    rx.select(
+                        DashboardState.opsi_bulan,
+                        value=DashboardState.bulan_terpilih,
+                        on_change=lambda val: DashboardState.ganti_filter("bulan", val),
+                        width="140px",
+                    ),
+                    align_items="start",
+                ),
+            ),
+            
+            # Dropdown 3: Pilih Minggu (HANYA Muncul jika Mode murni H-M)
+            rx.cond(
+                DashboardState.mode_grafik == "H-M",
+                rx.vstack(
+                    rx.text("Pilih Minggu", font_size="12px", color="gray", font_weight="bold"),
+                    rx.select(
+                        DashboardState.opsi_minggu,
+                        value=DashboardState.minggu_terpilih,
+                        on_change=lambda val: DashboardState.ganti_filter("minggu", val),
+                        width="190px",
+                    ),
+                    align_items="start",
+                ),
+            ),
+            
+            # Dropdown 4: Pilih Tahun Aktif (Muncul untuk H-M, H-B, M-B, dan B-T)
+            rx.cond(
+                DashboardState.mode_grafik != "T-T",
+                rx.vstack(
+                    rx.text("Tahun", font_size="12px", color="gray", font_weight="bold"),
+                    rx.select(
+                        DashboardState.opsi_tahun,
+                        value=DashboardState.tahun_terpilih,
+                        on_change=lambda val: DashboardState.ganti_filter("tahun", val),
+                        width="100px",
+                    ),
+                    align_items="start",
+                ),
+            ),
+            
+            # Dropdown 5 & 6: Rentang Tahun Khusus (HANYA Muncul jika Mode T-T aktif)
+            rx.cond(
+                DashboardState.mode_grafik == "T-T",
+                rx.hstack(
+                    rx.vstack(
+                        rx.text("Tahun Awal", font_size="12px", color="gray", font_weight="bold"),
+                        rx.select(
+                            DashboardState.opsi_tahun,
+                            value=DashboardState.tt_tahun_awal,
+                            on_change=lambda val: DashboardState.ganti_filter("tt_awal", val),
+                            width="110px",
+                        ),
+                        align_items="start",
+                    ),
+                    rx.text("s/d", margin_top="25px", color="gray"),
+                    rx.vstack(
+                        rx.text("Tahun Akhir", font_size="12px", color="gray", font_weight="bold"),
+                        rx.select(
+                            DashboardState.opsi_tahun,
+                            value=DashboardState.tt_tahun_akhir,
+                            on_change=lambda val: DashboardState.ganti_filter("tt_akhir", val),
+                            width="110px",
+                        ),
+                        align_items="start",
+                    ),
+                    spacing="3",
+                ),
+            ),
+            
+            rx.spacer(),
+            
+            # Tombol Tampilkan/Picu Grafik untuk Mitra
+            rx.button(
+                "Tampilkan Grafik", 
+                color_scheme="blue", 
+                size="2", 
+                margin_top="18px",
+                on_click=DashboardState.muat_data_grafik
+            ),
+            width="100%",
+            spacing="4",
+            background_color="rgba(255,255,255,0.02)",
+            padding="15px",
+            border_radius="10px",
+            border="1px solid rgba(255,255,255,0.05)",
+            align_items="center",
+            flex_wrap="wrap",
+        ),
+        
+        # --- PANEL UTAMA GRAFIK GARIS MITRA ---
+        rx.center(
+            rx.recharts.line_chart(
+                rx.recharts.line(
+                    data_key="Omset",
+                    stroke="#10b981",  # Warna hijau emerald khas mitra
+                    stroke_width=2.5,
+                    dot={"r": 3},
+                    active_dot={"r": 6}
+                ),
+                rx.recharts.x_axis(data_key="Tanggal", font_size="11px", tick_margin=10),
+                rx.recharts.y_axis(font_size="12px", orientation="right", tick_margin=10),
+                rx.recharts.cartesian_grid(stroke_dasharray="3 3", vertical=False),
+                rx.recharts.graphing_tooltip(),
+                data=DashboardState.data_grafik,
+                width="100%",
+                height=420,
+            ),
+            width="100%",
+            background_color="rgba(255,255,255,0.02)",
+            padding="25px 15px 15px 15px",
+            border_radius="12px",
+            border="1px solid rgba(255,255,255,0.08)",
+            margin_top="10px"
+        ),
+        width="100%",
+        spacing="3"
     )
 
 def konten_dashboard() -> rx.Component:
@@ -177,6 +463,4 @@ def halaman_dashboard() -> rx.Component:
     )
 
 # Memicu pemuatan data grafik otomatis saat user berhasil masuk dashboard
-halaman_dashboard = rx.page(
-    on_load=DashboardState.muat_data_grafik
-)(halaman_dashboard)
+halaman_dashboard = rx.page()(halaman_dashboard)
